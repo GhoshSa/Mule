@@ -1,0 +1,25 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/orders/999999'
+order: 3000
+headers:
+  - key: Accept
+    value: application/json
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 404 Not Found", function () {
+          pm.response.to.have.status(404);
+      });
+
+      pm.test("Error body has status field", function () {
+          const body = pm.response.json();
+          pm.expect(body).to.have.property("status");
+          pm.expect(body.status).to.eql(404);
+      });
+
+      pm.test("Error body has error code ORDER_NOT_FOUND", function () {
+          const body = pm.response.json();
+          pm.expect(body.error).to.eql("ORDER_NOT_FOUND");
+      });

@@ -1,0 +1,38 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/orders/{{orderId}}'
+order: 2000
+headers:
+  - key: Accept
+    value: application/json
+pathVariables:
+  - key: orderId
+    value: '{{orderId}}'
+    description: 'Numeric ID of the order to retrieve'
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 OK", function () {
+          pm.response.to.have.status(200);
+      });
+
+      pm.test("Response has order id", function () {
+          const body = pm.response.json();
+          pm.expect(body).to.have.property("id");
+      });
+
+      pm.test("Response has customerId", function () {
+          const body = pm.response.json();
+          pm.expect(body).to.have.property("customerId");
+      });
+
+      pm.test("Response has status field", function () {
+          const body = pm.response.json();
+          pm.expect(body.status).to.be.oneOf(["PENDING", "CONFIRMED", "FAILED"]);
+      });
+
+      pm.test("Response has createdAt timestamp", function () {
+          const body = pm.response.json();
+          pm.expect(body).to.have.property("createdAt");
+      });

@@ -35,3 +35,12 @@ build/
 
 ### VS Code ###
 .vscode/
+docs/
+
+DataSeeder.java
+application.properties
+
+.postman
+environments/
+flows/
+globals/

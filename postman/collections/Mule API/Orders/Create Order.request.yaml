@@ -1,0 +1,44 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/orders'
+order: 1000
+headers:
+  - key: Content-Type
+    value: application/json
+  - key: Accept
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "customerId": "customer-1",
+      "items": [
+        {
+          "productId": "product-1",
+          "quantity": 1
+        }
+      ]
+    }
+scripts:
+  - type: afterResponse
+    language: text/javascript
+    code: |-
+      pm.test("Status is 200 OK", function () {
+          pm.response.to.have.status(200);
+      });
+
+      pm.test("Response has order id", function () {
+          const body = pm.response.json();
+          pm.expect(body).to.have.property("id");
+          pm.collectionVariables.set("orderId", body.id);
+      });
+
+      pm.test("Response has customerId", function () {
+          const body = pm.response.json();
+          pm.expect(body).to.have.property("customerId");
+      });
+
+      pm.test("Response has status field", function () {
+          const body = pm.response.json();
+          pm.expect(body.status).to.be.oneOf(["PENDING", "CONFIRMED", "FAILED"]);
+      });
