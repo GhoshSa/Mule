@@ -1,75 +1,57 @@
 # Mule
 
-An event-driven order processing system built as a learning project — implementing
-the saga pattern, atomic concurrency control, and package-by-feature architecture
-in Spring Boot, with the explicit goal of eventually splitting into real
-microservices.
+Mule is a learning project for an event-driven order flow systems. It uses the saga pattern and a package-by-feature structure in Spring Boot, with the long-term goal of splitting into real distributed system.
 
-Mule is intentionally scoped as a **modular monolith MVP** right now. It
-demonstrates the core coordination patterns used in real distributed
-e-commerce order systems (orchestrated sagas, eventual consistency, atomic
-inventory reservation) without yet paying the operational cost of actual
-network boundaries between services — that split is the planned next
-milestone, not a missing feature of this one.
+Right now, it is intentionally a modular monolith MVP while it works its way toward that split. The project demonstrates the coordination patterns used in real e-commerce systems: orchestrated sagas, eventual consistency, and atomic inventory reservation. It has also taken its first real step toward a physical service split by separating the build into modules before changing any network or database boundaries.
 
 ## Overview
 
-Placing an order is a two-step process: create the order, then reserve stock
-for it. These two steps can each fail independently and — once inventory
-becomes its own service — can't share a single database transaction. Mule
-coordinates them with an **orchestrated saga**: a dedicated component runs
-each step in its own committed transaction and moves the order to a terminal
-state based on the outcome, rather than relying on one all-or-nothing
-transaction.
+Placing an order is a two-step process: create the order, then reserve the stock for it. Each step can fail on its own, and once inventory becomes a separate service, they cannot share a single database transaction. Mule coordinates the work with an orchestrated saga: a dedicated component runs each step in its own committed transaction and then moves the order into a terminal state based on the outcome, instead of relying on one big all-or-nothing transaction.
 
 ```
-Client --POST /orders--> OrderController
-                              |
-                              v
-                     OrderSagaOrchestrator
-                        /            \
-                       v              v
-                 OrderService    InventoryService
-                  (order pkg)     (inventory pkg)
-                       |               |
-                       v               v
-                    Orders table   InventoryItems table
+Client --POST /orders--> app/controller/OrderController
+                                    |
+                                    v
+                        app/saga/OrderSagaOrchestrator
+                              /            \
+                             v              v
+                       OrderService    InventoryService
+                     (order-service)  (inventory-service)
+                            |                |
+                            v                v
+                      Orders table     InventoryItems table
 ```
 
 ## Architecture
 
-Mule is a **package-by-feature modular monolith**: `order` and `inventory`
-are self-contained — each owns its model, repository, service, and (for
-`order`) controller and DTOs — and neither reaches into the other's
-internals directly. Cross-domain coordination lives in its own top-level
-package (`saga`), so it's explicit which code is responsible for wiring
-domains together versus owning a domain outright.
+Mule is now a **multi-module Maven build**, structured to mirror the services it will eventually become:
 
 ```
-io.github.ghoshsa.mule
-├── order/
-│   ├── controller/   OrderController
-│   ├── dto/          CreateOrderRequest, OrderItemRequest, OrderResponse
-│   ├── model/        Order, OrderItem, OrderStatus
-│   ├── repository/   OrderRepository
-│   ├── service/      OrderService
-│   └── exception/    OrderNotFoundException
-├── inventory/
-│   ├── model/         InventoryItem
-│   ├── repository/    InventoryRepository
-│   ├── service/       InventoryService
-│   └── DataSeeder      (dev-only stock seeding)
-├── saga/
-│   └── OrderSagaOrchestrator
-└── common/
-    └── web/            ErrorResponse, GlobalExceptionHandler
+mule/                        (parent — packaging=pom, no source code)
+├── order-service/           (jar — pure order domain, no dependency on inventory-service)
+│   └── io.github.ghoshsa.mule.order/
+│       ├── model/           Order, OrderItem, OrderStatus
+│       ├── repository/      OrderRepository
+│       ├── service/         OrderService
+│       ├── exception/       OrderNotFoundException
+│       └── dto/             CreateOrderRequest, OrderItemRequest, OrderResponse
+├── inventory-service/       (jar — pure inventory domain, no dependency on order-service)
+│   └── io.github.ghoshsa.mule.inventory/
+│       ├── model/           InventoryItem
+│       ├── repository/      InventoryRepository
+│       ├── service/         InventoryService
+│       └── DataSeeder       (dev-only stock seeding)
+└── app/                     (jar — the runnable Spring Boot app; composes the above)
+    └── io.github.ghoshsa.mule/
+        ├── MuleApplication.java
+        ├── saga/OrderSagaOrchestrator.java
+        ├── controller/OrderController.java
+        └── common/web/      ErrorResponse, GlobalExceptionHandler
 ```
 
-This structure is deliberate, not incidental: because each feature package is
-self-contained, extracting `inventory` into its own deployable service later
-is a matter of moving one folder and swapping an in-process call for a
-network call — not untangling code that was never separated in the first
-place.
+`order-service` and `inventory-service` deliberately have **no dependency on each other** — that's the actual point of the split, verified at build time, not just by folder convention. `app` depends on both, and is the only module that knows both domains exist.
+
+This structure is what makes the next step — giving `inventory-service` its own real deployable process and database, and replacing the in-process call with a REST call — a straightforward extraction task instead of a big refactor of code.
 
 ## API
 
@@ -98,22 +80,20 @@ Example error response (404):
 }
 ```
 
-A Postman collection covering both the success and
-insufficient-stock paths is included for manual testing.
+A Postman collection covering both the success and insufficient-stock paths is included for manual testing.
 
 ## Running locally
 
 ```bash
-./mvnw spring-boot:run
+./mvnw clean install
+./mvnw -pl app spring-boot:run
 ```
 
-Runs on port `8080` against an in-memory H2 database (Postgres is the
-target for the next milestone — see below). On startup, `DataSeeder` seeds
-two products for manual testing: one with stock, one with zero stock, so
-both the success and business-failure paths are reachable immediately.
+The `-pl app` flag is now required — with three modules in the reactor, Maven needs to be told which one is actually runnable.
 
-The H2 console is available at `/h2-console` for inspecting table state
-directly during development.
+Runs on port `8080` against an in-memory H2 database (Postgres per service, via Docker Compose, is the next step of the milestone — see below). On startup, `DataSeeder` seeds two products for manual testing: one with stock, one with zero stock, so both the success and business-failure paths are reachable immediately.
+
+The H2 console is available at `/h2-console` for inspecting table state directly during development.
 
 ## Testing
 
@@ -125,55 +105,34 @@ directly during development.
   of stock using `CountDownLatch`-synchronized threads, and asserts the
   exact confirmed/failed split and final stock level.
 
+Tests live in `app`, since they exercise the fully composed application (real HTTP layer, real orchestrator both domains wired together) — the same place `OrderController` and the orchestrator now live.
+
 ## Known limitations (current MVP)
 
 These are deliberate, documented scope cuts — not oversights discovered
 after the fact:
 
 - **Single item per order only.** Multi-item orders would hit a real bug:
-  if an order's second item fails to reserve after the first succeeded,
-  nothing releases the first item's reservation, permanently and silently
-  losing that stock. Restricting to one item removes the precondition for
-  this bug entirely until proper compensation logic is built.
-- **No idempotency key support yet.** A client retry can currently create a
-  duplicate order.
-- **No business-vs-technical failure classification yet.** A genuine
-  out-of-stock condition and a transient database/service failure currently
-  look identical to the saga — both simply return `false` from
+  if an order's second item fails to reserve after the first succeeded, nothing releases the first item's reservation, permanently and silently losing that stock. Restricting to one item removes the precondition for this bug entirely until proper compensation logic is built.
+- **No idempotency key support yet.** A client retry can currently create a duplicate order.
+- **No business-vs-technical failure classification yet.** A genuine out-of-stock condition and a transient database/service failure currently look identical to the saga — both simply return `false` from
   `reserveStock()`.
-- **Sequential auto-increment IDs, not UUIDs.** Fine for a single-database
-  monolith; will need to change once `inventory` has its own database.
-- **The global exception handler covers `OrderNotFoundException` only.**
-  Validation failures and unexpected exceptions do not yet have dedicated
-  handlers in the shipped version — they currently fall through to Spring's
-  default error handling rather than the project's structured
-  `ErrorResponse` envelope.
-- **On H2, not Postgres.** H2 is used as a local development stand-in;
-  the data model and queries are written to be Postgres-compatible.
+- **Sequential auto-increment IDs, not UUIDs.** Fine for now; will need to change once `inventory-service` has its own database.
+- **The global exception handler covers `OrderNotFoundException` only.** Validation failures and unexpected exceptions do not yet have dedicated handlers in the shipped version.
+- **Still on H2, one process.** The build is now split into modules that mirror future services, but at runtime it's still a single app process against a single in-memory database — the actual network and database boundary hasn't been introduced yet (next step, below).
 
 ## Next milestone: the microservices split
 
-The next phase is extracting `inventory` into a genuinely separate
-deployable service, in a deliberately staged sequence rather than all at
-once — each stage is real, separable engineering work, and building them
-together with a fresh network boundary would make it hard to isolate the
-source of any bug that appears:
+Extracting `inventory-service` into a genuinely separate deployable process, in a deliberately staged sequence — each stage is real, separable engineering work, and building them together with a fresh network boundary would make it hard to isolate the source of any bug that appears:
 
-1. **Split first, alone.** Multi-module Maven repo, separate Postgres
-   database per service via Docker Compose, REST calls between them. No new
-   saga sophistication yet.
-2. **Idempotency keys** — becomes genuinely necessary
-   once retries over a real network are possible.
-3. **Retries with timeouts** — safe to add only once idempotency is
-   already in place underneath them.
-4. **Durable saga state** — persisting orchestrator progress so a crashed
-   orchestrator can resume rather than just react; motivated by having felt
-   the pain of retry-related crashes.
-5. **Compensation logic** — releasing already-reserved stock when a later
-   step fails, unlocking multi-item orders. Saved for last deliberately,
-   since it's the most complex piece and benefits from everything below it
-   already being solid.
+1. **Split first, alone** — in progress.
+   - ✅ Multi-module Maven build: `order-service` and `inventory-service` have zero dependency on each other, verified at compile time.
+   - ⏳ Separate Postgres database per service via Docker Compose (H2 is still shared/in-process for now).
+   - ⏳ Replace `OrderSagaOrchestrator`'s in-process call to `InventoryService` with a real REST call between two separately running processes.
+   - Once both of those land, the goal is to confirm the saga's behavior — `PENDING` → `CONFIRMED`/`FAILED` — still holds correctly across a real network hop and two real, separate databases, with API responses otherwise unchanged from the current MVP.
+2. **Idempotency keys** — becomes genuinely necessary once retries over a real network are possible.
+3. **Retries with timeouts** — safe to add only once idempotency is already in place underneath them.
+4. **Durable saga state** — persisting orchestrator progress so a crashed orchestrator can resume rather than just react; motivated by having felt the pain of retry-related crashes.
+5. **Compensation logic** — releasing already-reserved stock when a later step fails, unlocking multi-item orders. Saved for last deliberately, since it's the most complex piece and benefits from everything below it already being solid.
 
-API contracts may be redesigned during this split rather than preserving
-the current MVP's exact request/response shape — documented here explicitly
-so that isn't a silent, unplanned drift later.
+API contracts may be redesigned during this split rather than preserving the current MVP's exact request/response shape — documented here explicitly so that isn't a silent, unplanned drift later.

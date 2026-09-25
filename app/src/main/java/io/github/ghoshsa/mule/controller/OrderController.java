@@ -1,4 +1,4 @@
-package io.github.ghoshsa.mule.order.controller;
+package io.github.ghoshsa.mule.controller;
 
 import java.util.List;
 
