@@ -1,5 +1,6 @@
 package io.github.ghoshsa.mule.order.model;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +35,9 @@ public class Order {
     @Column (nullable = false)
     @Enumerated (EnumType.STRING)
     private OrderStatus orderStatus = OrderStatus.PENDING;
+
+    @Column (nullable = false)
+    private BigDecimal totalAmount;
 
     @Column (nullable = false, updatable = false)
     private Instant createdAt = Instant.now();

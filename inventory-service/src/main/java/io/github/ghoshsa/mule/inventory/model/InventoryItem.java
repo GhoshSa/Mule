@@ -1,5 +1,7 @@
 package io.github.ghoshsa.mule.inventory.model;
 
+import java.math.BigDecimal;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -20,8 +22,12 @@ public class InventoryItem {
     @Column (nullable = false)
     private Integer availableQuantity;
 
-    public InventoryItem(String productId, Integer availableQuantity) {
+    @Column (nullable = false)
+    private BigDecimal price;
+
+    public InventoryItem(String productId, Integer availableQuantity, BigDecimal price) {
         this.productId = productId;
         this.availableQuantity = availableQuantity;
+        this.price = price;
     }
 }

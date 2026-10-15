@@ -1,5 +1,7 @@
 package io.github.ghoshsa.mule.order.model;
 
+import java.math.BigDecimal;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;

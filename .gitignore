@@ -1,12 +1,8 @@
 HELP.md
 target/
-.mvn/wrapper/maven-wrapper.properties
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
-mvnw
-mvnw.cmd
-.gitattributes
 
 ### STS ###
 .apt_generated
@@ -35,12 +31,3 @@ build/
 
 ### VS Code ###
 .vscode/
-docs/
-
-DataSeeder.java
-application.properties
-
-.postman
-environments/
-flows/
-globals/
